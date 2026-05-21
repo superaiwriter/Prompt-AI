@@ -80,12 +80,15 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
             initialValue = emptyList()
         )
 
+    val showOnlyFavorites = MutableStateFlow(false)
+
     // Filtered Prompts reactive sequence
     val filteredPrompts: StateFlow<List<Prompt>> = combine(
         allPrompts,
         selectedCategory,
-        searchQuery
-    ) { prompts, category, query ->
+        searchQuery,
+        showOnlyFavorites
+    ) { prompts, category, query, favoritesOnly ->
         prompts.filter { prompt ->
             val matchesCategory = if (category == null) {
                 true
@@ -102,7 +105,9 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                 prompt.categories.any { it.contains(query, ignoreCase = true) }
             }
 
-            matchesCategory && matchesSearch
+            val matchesFavorite = if (favoritesOnly) prompt.isFavorite else true
+
+            matchesCategory && matchesSearch && matchesFavorite
         }
     }.stateIn(
         scope = viewModelScope,
@@ -142,6 +147,63 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // Sandbox State for testing execution
+    private val _sandboxUiState = MutableStateFlow<SandboxUiState>(SandboxUiState.Idle)
+    val sandboxUiState: StateFlow<SandboxUiState> = _sandboxUiState.asStateFlow()
+
+    fun resetSandboxState() {
+        _sandboxUiState.value = SandboxUiState.Idle
+    }
+
+    fun runPromptInSandbox(promptText: String) {
+        if (promptText.isBlank()) {
+            _sandboxUiState.value = SandboxUiState.Error("Prompt text is empty.")
+            return
+        }
+        viewModelScope.launch {
+            _sandboxUiState.value = SandboxUiState.Loading
+            repository.testPromptInSandbox(promptText)
+                .onSuccess { response ->
+                    _sandboxUiState.value = SandboxUiState.Success(response)
+                }
+                .onFailure { error ->
+                    _sandboxUiState.value = SandboxUiState.Error(error.localizedMessage ?: "Execution failed.")
+                }
+        }
+    }
+
+    // Remix Variations State
+    private val _remixUiState = MutableStateFlow<RemixUiState>(RemixUiState.Idle)
+    val remixUiState: StateFlow<RemixUiState> = _remixUiState.asStateFlow()
+
+    fun resetRemixState() {
+        _remixUiState.value = RemixUiState.Idle
+    }
+
+    fun generateVariationsOfPrompt(promptContent: String, toneType: String) {
+        if (promptContent.isBlank()) {
+            _remixUiState.value = RemixUiState.Error("Prompt content is empty.")
+            return
+        }
+        viewModelScope.launch {
+            _remixUiState.value = RemixUiState.Loading
+            repository.remixPrompt(promptContent, toneType)
+                .onSuccess { outcome ->
+                    _remixUiState.value = RemixUiState.Success(outcome)
+                }
+                .onFailure { error ->
+                    _remixUiState.value = RemixUiState.Error(error.localizedMessage ?: "Remixing failed.")
+                }
+        }
+    }
+
+    // Toggle favorite state
+    fun toggleFavorite(prompt: Prompt) {
+        viewModelScope.launch {
+            repository.updatePrompt(prompt.copy(isFavorite = !prompt.isFavorite))
+        }
+    }
+
     // Insert user created prompt
     fun savePrompt(
         title: String,
@@ -158,7 +220,8 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                     instruction = instruction,
                     targetPlatform = targetPlatform,
                     categories = categories,
-                    isPreloaded = false
+                    isPreloaded = false,
+                    isFavorite = false
                 )
             )
         }
@@ -190,4 +253,18 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
     }
+}
+
+sealed interface SandboxUiState {
+    object Idle : SandboxUiState
+    object Loading : SandboxUiState
+    data class Success(val response: String) : SandboxUiState
+    data class Error(val message: String) : SandboxUiState
+}
+
+sealed interface RemixUiState {
+    object Idle : RemixUiState
+    object Loading : RemixUiState
+    data class Success(val remixedText: String) : RemixUiState
+    data class Error(val message: String) : RemixUiState
 }

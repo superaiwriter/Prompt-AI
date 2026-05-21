@@ -86,7 +86,68 @@ class PromptRepository(private val promptDao: PromptDao) {
                 Result.success(Pair(optimized, instructions))
             } else {
                 // Return everything in the optimized section and fallback for instruction
-                Result.success(Pair(responseText.trim(), "Paste directly into $targetPlatform to unleash stunning results."))
+                Result.success(Pair(responseText.trim(), "Paste directly into ${'$'}targetPlatform to unleash stunning results."))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun testPromptInSandbox(promptText: String): Result<String> = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext Result.failure(Exception("API Key is missing or default. Please enter a valid Gemini API Key in the AI Studio Secrets panel."))
+        }
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(parts = listOf(Part(text = promptText)))),
+            generationConfig = GenerationConfig(temperature = 0.7f)
+        )
+
+        try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            val responseText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            if (responseText.isNullOrBlank()) {
+                Result.failure(Exception("Received empty response from Gemini."))
+            } else {
+                Result.success(responseText)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun remixPrompt(promptContent: String, toneType: String): Result<String> = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY
+        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext Result.failure(Exception("API Key is missing or default. Please enter a valid Gemini API Key in the AI Studio Secrets panel."))
+        }
+
+        val systemPrompt = """
+            You are a master prompts remixer. Your task is to take an existing prompt, and remix its perspective, tone, and style based on the selected tuning type: '$toneType'.
+            
+            Here are the options:
+            - "Anime/Illustration": Make it feel highly artistic, descriptive in drawing styles, outlines, vibrant aesthetics.
+            - "Photorealistic Cinematic": Render with specific camera parameters (8k, lens, exposure, cinematic lightning, detailed atmospheric composition).
+            - "Advanced/Detailed": Turn any short prompt into a hyper-detailed, structured instruction prompt with multiple negative guidelines.
+            - "Concise/Brief": Prune unnecessary words while preserving its fundamental concepts.
+            
+            Produce ONLY the final, complete resubmitted / remixed prompt. None of your own introductory or ending remarks, just output the polished text.
+        """.trimIndent()
+
+        val request = GenerateContentRequest(
+            contents = listOf(Content(parts = listOf(Part(text = "Prompt to remix: $promptContent")))),
+            systemInstruction = Content(parts = listOf(Part(text = systemPrompt))),
+            generationConfig = GenerationConfig(temperature = 0.8f)
+        )
+
+        try {
+            val response = RetrofitClient.service.generateContent(apiKey, request)
+            val responseText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            if (responseText.isNullOrBlank()) {
+                Result.failure(Exception("Received empty response from Gemini."))
+            } else {
+                Result.success(responseText)
             }
         } catch (e: Exception) {
             Result.failure(e)

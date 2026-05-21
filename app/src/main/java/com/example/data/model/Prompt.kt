@@ -12,5 +12,6 @@ data class Prompt(
     val targetPlatform: String,
     val categories: List<String>, // Stores multiple categories/sub-categories
     val createdAt: Long = System.currentTimeMillis(),
-    val isPreloaded: Boolean = false
+    val isPreloaded: Boolean = false,
+    val isFavorite: Boolean = false
 )
