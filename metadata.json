@@ -1,0 +1,6 @@
+{
+  "name": "Prompt Studio",
+  "description": "AI Prompt Studio — Generate, manage, rate, and organize state-of-the-art AI prompts for images, video, text, programming, and creative writing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
